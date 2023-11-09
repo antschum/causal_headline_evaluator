@@ -1,3 +1,5 @@
+import csv
+import gzip
 import torch 
 import pickle
 from transformers import AutoTokenizer,AutoModel
@@ -41,7 +43,7 @@ else:
 model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
 
 #Load data
-df = pd.read_csv("C:/Users/mldem/Downloads/upworthy-archive-datasets/upworthy-archive-confirmatory-packages-03.12.2020.csv")
+df = pd.read_csv("/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/osfstorage-archive/upworthy-archive-datasets/upworthy-archive-confirmatory-packages-03.12.2020.csv", low_memory=False)
 #Delete some unnecessary columns
 df.columns
 delete_cols = ["created_at","updated_at","share_text","square"]
@@ -50,9 +52,9 @@ df.sample(10)
 #Extract only headlines
 headlines =df.headline.values
 headlines.shape
-headlines = headlines[:1000]
+headlines = headlines[:10000]
 clicks = df.clicks.values
-clicks=clicks[:1000]
+clicks=clicks[:10000]
 clicks = torch.tensor(clicks)
 clicks.shape
 
@@ -60,6 +62,11 @@ clicks.shape
 embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True,
                           )
 embeddings.shape
+
+#Define test/train data
+dataset = TensorDataset(embeddings,clicks)
+train_set, test_set = random_split(dataset, [0.8, 0.2])
+
 #To Save embeddings
 with open('embeddings.pkl', "wb") as fOut:
      pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
@@ -71,17 +78,43 @@ with open('embeddings.pkl', "rb") as fIn:
     stored_embeddings = stored_data['embeddings']
    
 
-#Define test/train data
-dataset = TensorDataset(embeddings,clicks)
-#train_set, test_set = random_split(dataset, [0.8, 0.2])
-reader = pd.read_csv("C:\Projects\CausalClicker\headline_pair_indices.csv",header=True)
-reader
-input_examples = []
-for row in reader:
+# Initial Training Regression on Embeddings. 
+
+regression_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1],store_cv_values=True)
+regression_model.cv_values_.mean(axis=0)
+clf = regression_model.fit(X_train, y_train)
+clf.score(X_train,y_train)
+
+predictions = regression_model.predict(X_test)
+rmse = mean_squared_error(y_test, predictions, squared=False)
+print(rmse)
+print(predictions)
+print(y_test)
+
+
+# Predicting Headline-Winner based on SBert Embeddings with Logistic Regression
+pairs = pd.read_csv("/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/causal_headline_evaluator/headline_pair_indices.csv")
+# Compute Vector difference
+### Need embeddings for all data!
+#pairs['embedding_diff'] = embeddings[pairs.iloc['Idx_Headline1']] - embeddings[pairs.iloc['Idx_Headline2']]
+
+embeddings[pairs.loc[20,'Idx_Headline1']]-embeddings[pairs.loc[20,'Idx_Headline2']]
+
+
+# Predicting Click difference based on SBert Embeddings with Ridge Regression
+
+
+
+
+# Fine Tuning Pretrained Model 
+
+with open("/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/causal_headline_evaluator/headline_pair_indices.csv", "r") as fIn:
+    reader = csv.DictReader(fIn, delimiter=",", quoting=csv.QUOTE_NONE)
+    input_examples = []
+    for row in reader:
         print(row)
-        break
-        score = float(row['click_difference'])  
-        inp_example = InputExample(texts=[df.loc[row['Idx_Headline1'], "headline"], df.loc[row['Idx_Headline2'], "headline"]], label=score)
+        score = int(row['click_difference'])  
+        inp_example = InputExample(texts=[df.loc[int(row['Idx_Headline1']), "headline"], df.loc[int(row['Idx_Headline2']), "headline"]], label=score)
 
         input_examples.append(inp_example)
         # if row['split'] == 'dev':
@@ -91,6 +124,7 @@ for row in reader:
         # else:
         #     train_samples.append(inp_example)
 
+# Still not fully working here..
 train_set, test_set = random_split(input_examples, [0.8, 0.2])
 
 
@@ -105,13 +139,5 @@ train_dataloader_y = DataLoader(
             batch_size = 32 # Trains with this batch size.
         )
 
-regression_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1],store_cv_values=True)
-regression_model.cv_values_.mean(axis=0)
-clf = regression_model.fit(X_train, y_train)
-clf.score(X_train,y_train)
 
-predictions = regression_model.predict(X_test)
-rmse = mean_squared_error(y_test, predictions, squared=False)
-print(rmse)
-print(predictions)
-print(y_test)
+
