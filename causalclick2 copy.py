@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, mean_squared_error, mean_absolute_error
 import numpy as np
-from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import RidgeCV, LogisticRegression
 from torch import nn
 from transformers import AutoModel, AutoTokenizer, AdamW, get_linear_schedule_with_warmup
 from torch.utils.data import DataLoader, TensorDataset
@@ -33,57 +33,43 @@ else:
     print('No GPU available, using the CPU instead.')
     device = torch.device("cpu")
 
-#Define model - not pretrained
-# word_embedding_model = models.Transformer('bert-base-uncased', max_seq_length=256)
-# pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension()) #pooling method, ins sbert they use this instead of cls?
-# dense_model = models.Dense(in_features=pooling_model.get_sentence_embedding_dimension(), out_features=256, activation_function=nn.Sigmoid())
-# model = SentenceTransformer(modules=[word_embedding_model, pooling_model,dense_model]) #making the sentence transformer
-
 #Define model - pretrained
 model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
 
 #Load data
 df = pd.read_csv("/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/osfstorage-archive/upworthy-archive-datasets/upworthy-archive-confirmatory-packages-03.12.2020.csv", low_memory=False)
+
 #Delete some unnecessary columns
 df.columns
 delete_cols = ["created_at","updated_at","share_text","square"]
 df = df.drop(columns=delete_cols)
 df.sample(10)
+
 #Extract only headlines
 headlines =df.headline.values
-headlines.shape
-headlines = headlines[:10000]
 clicks = df.clicks.values
-clicks=clicks[:10000]
 clicks = torch.tensor(clicks)
-clicks.shape
 
-#Embeddings
-embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True,
-                          )
-embeddings.shape
-
-#Define test/train data
-dataset = TensorDataset(embeddings,clicks)
-train_set, test_set = random_split(dataset, [0.8, 0.2])
-
-#To Save embeddings
-with open('embeddings.pkl', "wb") as fOut:
-     pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
+# Embeddings
+#embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True,)
+#embeddings.shape
 
 #Load sentences & embeddings from disc
-with open('embeddings.pkl', "rb") as fIn:
+with open('/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/causal_headline_evaluator/full_embeddings.pkl', "rb") as fIn:
     stored_data = pickle.load(fIn)
     stored_sentences = stored_data['headlines']
     stored_embeddings = stored_data['embeddings']
-   
 
-# Initial Training Regression on Embeddings. 
+#Define test/train data
+dataset = TensorDataset(stored_embeddings,clicks)
+X_train, X_test, y_train, y_test = train_test_split(stored_embeddings,clicks, test_size=0.2)
+
+# 1. Initial Training Regression on Embeddings. 
 
 regression_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1],store_cv_values=True)
-regression_model.cv_values_.mean(axis=0)
 clf = regression_model.fit(X_train, y_train)
 clf.score(X_train,y_train)
+regression_model.cv_values_.mean(axis=0)
 
 predictions = regression_model.predict(X_test)
 rmse = mean_squared_error(y_test, predictions, squared=False)
@@ -92,18 +78,33 @@ print(predictions)
 print(y_test)
 
 
-# Predicting Headline-Winner based on SBert Embeddings with Logistic Regression
-pairs = pd.read_csv("/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/causal_headline_evaluator/headline_pair_indices.csv")
-# Compute Vector difference
-### Need embeddings for all data!
-#pairs['embedding_diff'] = embeddings[pairs.iloc['Idx_Headline1']] - embeddings[pairs.iloc['Idx_Headline2']]
+# 2. Predicting Headline-Winner based on SBert Embeddings with Logistic Regression
+pairs = pd.read_csv("/Users/tonia/headline_pair_indices.csv")
 
-embeddings[pairs.loc[20,'Idx_Headline1']]-embeddings[pairs.loc[20,'Idx_Headline2']]
+# Add Vector difference
+pairs['embedding_diff'] = pairs.apply(lambda row: stored_embeddings[row['Idx_Headline1']] - stored_embeddings[row['Idx_Headline2']], axis=1)
+
+# Train test split
+X_train, X_test, y_train, y_test = train_test_split(pairs['embedding_diff'],pairs['headline1_more_clicks'], test_size=0.2)
+
+# Train Logistic Regression
+# Not working yet - need to google again logistic regression w/ tensors.
+# logistic = LogisticRegression()
+
+# logistic.fit(X_train, y_train)
 
 
-# Predicting Click difference based on SBert Embeddings with Ridge Regression
+
+# 3. Predicting Click difference based on SBert Embeddings with Ridge Regression
 
 
+
+
+#Define model - not pretrained
+# word_embedding_model = models.Transformer('bert-base-uncased', max_seq_length=256)
+# pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension()) #pooling method, ins sbert they use this instead of cls?
+# dense_model = models.Dense(in_features=pooling_model.get_sentence_embedding_dimension(), out_features=256, activation_function=nn.Sigmoid())
+# model = SentenceTransformer(modules=[word_embedding_model, pooling_model,dense_model]) #making the sentence transformer
 
 
 # Fine Tuning Pretrained Model 
