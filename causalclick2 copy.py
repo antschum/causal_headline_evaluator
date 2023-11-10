@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, mean_squared_error, mean_absolute_error
 import numpy as np
-from sklearn.linear_model import RidgeCV, LogisticRegression
+from sklearn.linear_model import RidgeCV, LogisticRegression, LinearRegression
 from torch import nn
 
 from torch.utils.data import DataLoader, TensorDataset
@@ -78,24 +78,29 @@ X_train, X_test, y_train, y_test = train_test_split(stored_embeddings,clicks, te
 clicks.shape
 # 1. Initial Training Regression on Embeddings. 
 
-regression_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1],store_cv_values=True)
-clf = regression_model.fit(X_train, y_train)
-clf.score(X_train,y_train)
+ridge_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1],store_cv_values=True)
+ridge_fit = ridge_model.fit(X_train, y_train)
+ridge_fit.score(X_train,y_train)
 
-predictions = regression_model.predict(X_test)
+predictions = ridge_model.predict(X_test)
 rmse = mean_squared_error(y_test, predictions, squared=False)
 print("Ridge Regression MSE for clicks difference:", rmse) #result is awful :)
 
-pairs = pd.read_csv("C:/Projects/CausalClicker/headline_pair_indices.csv")
+pairs = pd.read_csv("C:/Projects/CausalClicker/causal_headline_evaluator/headline_pair_indices.csv")
 # Compute Vector difference
 ### Need embeddings for all data!
-pairs['embedding_diff'] = pairs.apply(lambda row: stored_embeddings[row['Idx_Headline1']] - stored_embeddings[row['Idx_Headline2']], axis=1)
-
+vec1 = pairs.apply(lambda row:(stored_embeddings[row['Idx_Headline1']]), axis=1)
+vec1= torch.stack(vec1.tolist())
+vec2 = pairs.apply(lambda row:(stored_embeddings[row['Idx_Headline2']]), axis=1)
+vec2= torch.stack(vec2.tolist())
+# pairs['embedding_diff'] = pairs.apply(lambda row: stored_embeddings[row['Idx_Headline1']] - stored_embeddings[row['Idx_Headline2']], axis=1) previous try with difference
+concatenated_vector = torch.cat([vec1, vec2], dim=1)
+concatenated_vector.shape #shape is double, so it must be fine :)
 #2 Predicting Headline-Winner based on SBert Embeddings with Logistic Regression
 headline_more_clicks = torch.tensor(pairs['headline1_more_clicks'])
 print(headline_more_clicks.shape)
-embs = torch.stack(pairs['embedding_diff'].tolist()) #because we have a column where each row is a tensor so we kinda unpack them.
-print(embs.shape)
+#embs = torch.stack(pairs['embedding_diff'].tolist()) #because we have a column where each row is a tensor so we kinda unpack them.
+#print(embs.shape)
 
 X_train, X_test, y_train, y_test = train_test_split(embs,headline_more_clicks, test_size=0.2)
 logistic = LogisticRegression()
@@ -109,16 +114,24 @@ print("Accuracy for clicks difference:", accuracy_logistic)
 ## check shape matching and turning into tensors to work
 clicks_diff = torch.tensor(pairs['click_difference'])
 print(clicks_diff.shape)
-embs = torch.stack(pairs['embedding_diff'].tolist()) #because we have a column where each row is a tensor so we kinda unpack them.
-print(embs.shape)
-X_train, X_test, y_train, y_test = train_test_split(embs,clicks_diff, test_size=0.2)
-regression_model_diff =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1],store_cv_values=True)
-clf_diff = regression_model_diff.fit(X_train, y_train)
-clf_diff.score(X_train,y_train)
-predictions_diff = regression_model_diff.predict(X_test)
-rmse_diff = mean_squared_error(y_test, predictions_diff)
-print("Ridge Regression MSE for clicks difference:", rmse_diff) #result is awful :)
 
+X_train, X_test, y_train, y_test = train_test_split(concatenated_vector,clicks_diff, test_size=0.2)
+ridge_model_diff =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1],store_cv_values=True)
+ridge_fit_diff = ridge_model_diff.fit(X_train, y_train)
+ridge_fit_diff.score(X_train,y_train)
+ridge_predictions_diff = ridge_model_diff.predict(X_test)
+ridge_rmse_diff = mean_squared_error(y_test, ridge_predictions_diff)
+print("Ridge Regression MSE for clicks difference:", ridge_rmse_diff) #result doesnt seem to be that much better so I am not convinced if I did the right thing
+
+
+#4 Predicting Click difference based on SBert Embeddings with Linear Regression
+X_train, X_test, y_train, y_test = train_test_split(concatenated_vector,clicks_diff, test_size=0.2)
+lin_model_diff = LinearRegression()
+lin_fit_diff = lin_model_diff.fit(X_train, y_train)
+lin_fit_diff.score(X_train,y_train)
+lin_predictions_diff = lin_model_diff.predict(X_test)
+lin_rmse_diff = mean_squared_error(y_test, lin_predictions_diff)
+print("Linear Regression MSE for clicks difference:", lin_rmse_diff)
 
 
 
