@@ -51,10 +51,9 @@ df = df.drop(columns=delete_cols)
 df.sample(10)
 #Extract only headlines
 headlines =df.headline.values
-headlines.shape
-clicks = df.clicks.values
-clicks = torch.tensor(clicks)
-clicks.shape
+print(headlines.shape)
+clicks =torch.tensor(df.clicks.values)
+print(clicks.shape)
 
 #Embeddings
 # embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True)
@@ -75,33 +74,34 @@ with open('/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/causal_head
 #Define test/train data
 dataset = TensorDataset(stored_embeddings,clicks)
 X_train, X_test, y_train, y_test = train_test_split(stored_embeddings,clicks, test_size=0.2)
-clicks.shape
+
+
 # 1. Initial Training Regression on Embeddings. 
 
 ridge_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1],store_cv_values=True)
 ridge_fit = ridge_model.fit(X_train, y_train)
 ridge_fit.score(X_train,y_train)
-
 predictions = ridge_model.predict(X_test)
 rmse = mean_squared_error(y_test, predictions, squared=False)
 print("Ridge Regression MSE for clicks difference:", rmse) #result is awful :)
 
 pairs = pd.read_csv("C:/Projects/CausalClicker/causal_headline_evaluator/headline_pair_indices.csv")
-# Compute Vector difference
-### Need embeddings for all data!
+#Compute vector difference
+pairs['embedding_diff'] = pairs.apply(lambda row: stored_embeddings[row['Idx_Headline1']] - stored_embeddings[row['Idx_Headline2']], axis=1)
+embs = torch.stack(pairs['embedding_diff'].tolist()) #because we have a column where each row is a tensor so we kinda unpack them.
+print(embs.shape)
+
+#Compute concatenated embeddings of the pairs
 vec1 = pairs.apply(lambda row:(stored_embeddings[row['Idx_Headline1']]), axis=1)
 vec1= torch.stack(vec1.tolist())
 vec2 = pairs.apply(lambda row:(stored_embeddings[row['Idx_Headline2']]), axis=1)
 vec2= torch.stack(vec2.tolist())
-# pairs['embedding_diff'] = pairs.apply(lambda row: stored_embeddings[row['Idx_Headline1']] - stored_embeddings[row['Idx_Headline2']], axis=1) previous try with difference
 concatenated_vector = torch.cat([vec1, vec2], dim=1)
-concatenated_vector.shape #shape is double, so it must be fine :)
+print(concatenated_vector.shape) #shape looks like it should be fine :)
+
 #2 Predicting Headline-Winner based on SBert Embeddings with Logistic Regression
 headline_more_clicks = torch.tensor(pairs['headline1_more_clicks'])
 print(headline_more_clicks.shape)
-#embs = torch.stack(pairs['embedding_diff'].tolist()) #because we have a column where each row is a tensor so we kinda unpack them.
-#print(embs.shape)
-
 X_train, X_test, y_train, y_test = train_test_split(embs,headline_more_clicks, test_size=0.2)
 logistic = LogisticRegression()
 logistic.fit(X_train, y_train)
