@@ -35,5 +35,5 @@ headlines =df.headline.values
 embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True,
                           )
 
-with open('embeddings.pkl', "wb") as fOut:
+with open('full_embeddings.pkl', "wb") as fOut:
      pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
