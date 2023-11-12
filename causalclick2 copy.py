@@ -1,5 +1,4 @@
 
-from charset_normalizer import md__mypyc
 from sentence_transformers import SentenceTransformer
 import pandas as pd
 from torch.utils.data import TensorDataset, random_split
@@ -9,7 +8,6 @@ from sklearn.metrics import mean_squared_error, r2_score, mean_squared_error, me
 import numpy as np
 from sklearn.linear_model import RidgeCV, LogisticRegression, LinearRegression
 from torch import nn
-
 from torch.utils.data import DataLoader, TensorDataset
 import csv
 import gzip
@@ -49,6 +47,10 @@ df.columns
 delete_cols = ["created_at","updated_at","share_text","square"]
 df = df.drop(columns=delete_cols)
 df.sample(10)
+#Create a new column for clickrate
+df["clickrate"] = round((df["clicks"]/ df["impressions"]),ndigits=3)
+
+
 #Extract only headlines
 headlines =df.headline.values
 print(headlines.shape)
@@ -56,19 +58,20 @@ clicks =torch.tensor(df.clicks.values)
 print(clicks.shape)
 
 #Embeddings
-# embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True)
-# embeddings.shape
+#embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True)
+#embeddings.shape
 
 
 
 #To Save embeddings
-with open('embeddings.pkl', "wb") as fOut:
+with open('full_embeddings.pkl', "wb") as fOut:
      pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
-
-with open('/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/causal_headline_evaluator/full_embeddings.pkl', "rb") as fIn:
+#To open embeddings
+with open('C:/Projects/CausalClicker/full_embeddings.pkl', "rb") as fIn:
     stored_data = pickle.load(fIn)
     stored_sentences = stored_data['headlines']
     stored_embeddings = stored_data['embeddings']
+
 
 
 #Define test/train data
@@ -80,17 +83,17 @@ X_train, X_test, y_train, y_test = train_test_split(stored_embeddings,clicks, te
 
 ridge_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1],store_cv_values=True)
 ridge_fit = ridge_model.fit(X_train, y_train)
-ridge_fit.score(X_train,y_train)
+ridge_fit.score(X_train,y_train) #R2 on training data
 predictions = ridge_model.predict(X_test)
 rmse = mean_squared_error(y_test, predictions, squared=False)
-print("Ridge Regression MSE for clicks difference:", rmse) #result is awful :)
+print("Ridge Regression MSE for clicks difference:", rmse)
 
+#Make a new dataset with pairs
 pairs = pd.read_csv("C:/Projects/CausalClicker/causal_headline_evaluator/headline_pair_indices.csv")
 #Compute vector difference
 pairs['embedding_diff'] = pairs.apply(lambda row: stored_embeddings[row['Idx_Headline1']] - stored_embeddings[row['Idx_Headline2']], axis=1)
 embs = torch.stack(pairs['embedding_diff'].tolist()) #because we have a column where each row is a tensor so we kinda unpack them.
 print(embs.shape)
-
 #Compute concatenated embeddings of the pairs
 vec1 = pairs.apply(lambda row:(stored_embeddings[row['Idx_Headline1']]), axis=1)
 vec1= torch.stack(vec1.tolist())
@@ -99,7 +102,7 @@ vec2= torch.stack(vec2.tolist())
 concatenated_vector = torch.cat([vec1, vec2], dim=1)
 print(concatenated_vector.shape) #shape looks like it should be fine :)
 
-#2 Predicting Headline-Winner based on SBert Embeddings with Logistic Regression
+#2 Predicting Headline-Winner based on SBert Embeddings with Logistic Regression - doesnt work anymore, because the column headline_more_clicks anymore is only true
 headline_more_clicks = torch.tensor(pairs['headline1_more_clicks'])
 print(headline_more_clicks.shape)
 X_train, X_test, y_train, y_test = train_test_split(embs,headline_more_clicks, test_size=0.2)
@@ -121,7 +124,7 @@ ridge_fit_diff = ridge_model_diff.fit(X_train, y_train)
 ridge_fit_diff.score(X_train,y_train)
 ridge_predictions_diff = ridge_model_diff.predict(X_test)
 ridge_rmse_diff = mean_squared_error(y_test, ridge_predictions_diff)
-print("Ridge Regression MSE for clicks difference:", ridge_rmse_diff) #result doesnt seem to be that much better so I am not convinced if I did the right thing
+print("Ridge Regression MSE for clicks difference:", ridge_rmse_diff) #result doesnt seem to be better so I am not convinced if I did the right thing
 
 
 #4 Predicting Click difference based on SBert Embeddings with Linear Regression
@@ -131,7 +134,7 @@ lin_fit_diff = lin_model_diff.fit(X_train, y_train)
 lin_fit_diff.score(X_train,y_train)
 lin_predictions_diff = lin_model_diff.predict(X_test)
 lin_rmse_diff = mean_squared_error(y_test, lin_predictions_diff)
-print("Linear Regression MSE for clicks difference:", lin_rmse_diff)
+print("Linear Regression MSE for clicks difference:", lin_rmse_diff) #Result is better with linear regression
 
 
 
