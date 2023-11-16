@@ -13,9 +13,9 @@ import torch
 import pickle
 import random
 from sklearn.metrics import accuracy_score
-path = '/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/causal_headline_evaluator'
-dataset = "/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/osfstorage-archive/upworthy-archive-datasets/upworthy-archive-confirmatory-packages-03.12.2020.csv"
 
+path = 'C:/Projects/CausalClicker/causal_headline_evaluator'
+dataset = "C:/Users/mldem/Downloads/upworthy-archive-datasets/upworthy-archive-confirmatory-packages-03.12.2020.csv"
 # Set random seed
 seed = 42
 torch.manual_seed(seed)
@@ -112,10 +112,11 @@ print("Accuracy predicting winner:", accuracy_logistic)
 
 #3 Predicting Click difference based on SBert embeddings with Ridge Regression
 ## check shape matching and turning into tensors to work
-clicks_diff = torch.tensor(df_pairs['click_difference'])
+clicks_diff = torch.tensor(abs(df_pairs['click_difference']))
+sorted_embedding_diff = torch.stack(df_sorted_pairs.apply(lambda row: stored_embeddings[row['Idx_Headline1']] - stored_embeddings[row['Idx_Headline2']], axis=1).tolist()) 
 
 #Based on difference vector
-X_train, X_test, y_train, y_test = train_test_split(embedding_diff, clicks_diff, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(sorted_embedding_diff, clicks_diff, test_size=0.2)
 ridge_model_diff =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1, 10],store_cv_values=True)
 ridge_fit_diff = ridge_model_diff.fit(X_train, y_train)
 ridge_fit_diff.score(X_train,y_train) #0.09528
@@ -123,6 +124,7 @@ ridge_predictions_diff = ridge_model_diff.predict(X_test)
 ridge_rmse_diff = mean_squared_error(y_test, ridge_predictions_diff)
 print("Ridge Regression MSE for clicks difference:", ridge_rmse_diff)
 print("Ridge Regression R2 for click difference:", r2_score(y_true=y_test, y_pred=ridge_predictions_diff)) 
+
 
 # Extra: Prediction based on concatenated full embeddings
 ## Here we need to make sure the headline ordering is correct! 
@@ -133,6 +135,8 @@ vec2 = df_sorted_pairs.apply(lambda row:(stored_embeddings[row['Idx_Headline2']]
 vec2= torch.stack(vec2.tolist())
 concatenated_vector = torch.cat([vec1, vec2], dim=1)
 print(concatenated_vector.shape) 
+#torch.corrcoef(concatenated_vector)
+
 
 #Based on concatenated full embeddings
 X_train, X_test, y_train, y_test = train_test_split(concatenated_vector, clicks_diff, test_size=0.2)
