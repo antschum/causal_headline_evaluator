@@ -13,7 +13,7 @@ import torch
 import pickle
 import random
 from sklearn.metrics import accuracy_score
-
+import scipy.stats as stats
 path = 'C:/Projects/CausalClicker/causal_headline_evaluator'
 dataset = "C:/Users/mldem/Downloads/upworthy-archive-datasets/upworthy-archive-confirmatory-packages-03.12.2020.csv"
 # Set random seed
@@ -49,7 +49,7 @@ delete_cols = ["created_at","updated_at","share_text","square"]
 df = df.drop(columns=delete_cols)
 #Create a new column for clickrate
 df["clickrate"] = round((df["clicks"]/ df["impressions"]),ndigits=3)
-
+df.columns
 clicks =torch.tensor(df.clicks.values)
 
 #Embeddings
@@ -80,6 +80,38 @@ rmse = mean_squared_error(y_test, predictions, squared=False)
 print("Ridge Regression MSE for click difference:", rmse)
 print("Ridge Regression R2 for click difference:", r2_score(y_true=y_test, y_pred=predictions))
 
+df["predictions"] = ridge_model.predict(stored_embeddings)
+stats.spearmanr(df.sort_values(["predictions"]).loc[:,"headline"],df.sort_values(["clicks"]).loc[:,"headline"])
+
+#last 20
+print("Last 20 predicted:", df.sort_values(["predictions"]).loc[:,['headline',"clicks"]][:20])
+print("Last 20 true:",df.sort_values(["clicks"]).loc[:,['headline',"clicks"]][:20])
+#first 20
+print("Top 20 predicted:",df.sort_values(["predictions"]).loc[:,['headline',"clicks"]][-20:])
+print("Top 20 true:",df.sort_values(["clicks"]).loc[:,['headline',"clicks"]][-20:])
+
+# Ridge with clickrate instead of clicks
+# Model
+clickrate =torch.tensor(df.clickrate.values)
+X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, clickrate, test_size=0.2)
+# Ridge Model
+ridge_model_clickrate =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1, 10],store_cv_values=True)
+ridge_model_clickrate.fit(X_train, y_train)
+ridge_model_clickrate.score(X_train,y_train) #0.1629
+predictions_clickrate = ridge_model.predict(X_test) #alpha = 10
+rmse_clickrate = mean_squared_error(y_test, predictions, squared=False)
+df["predictions_clickrate"] = ridge_model_clickrate.predict(stored_embeddings)
+print("Ridge Regression MSE for click difference:", rmse_clickrate)
+print("Ridge Regression R2 for click difference:", r2_score(y_true=y_test, y_pred=predictions))
+#last 20
+print("Last 20 predicted:", df.sort_values(["predictions_clickrate"]).loc[:,['headline',"clickrate","predictions_clickrate"]][:20])
+print("Last 20 true:",df.sort_values(["clickrate"]).loc[:,['headline',"clickrate","predictions_clickrate"]][:20])
+#first 20
+print("Top 20 predicted:",df.sort_values(["predictions"]).loc[:,['headline',"clickrate","predictions_clickrate"]][-20:])
+print("Top 20 true:",df.sort_values(["clickrate"]).loc[:,['headline',"clickrate"]][-20:])
+
+
+
 # Linear Model
 linear_model =LinearRegression()
 linear_model.fit(X_train, y_train)
@@ -88,6 +120,19 @@ predictions = linear_model.predict(X_test)
 rmse = mean_squared_error(y_test, predictions, squared=False)
 print("Linear Regression MSE for clicks:", rmse)
 print("Linear Regression R2 for clicks:", r2_score(y_true=y_test, y_pred=predictions))
+
+#Visualizing predicted clicks vs actual clicks
+import seaborn as sns
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings("ignore", "is_categorical_dtype")
+# print stuff. 
+predictions = ridge_model.predict(stored_embeddings)
+
+# visualize real and predicted values
+fig, ax = plt.subplots()
+sns.scatterplot(x = predictions, y = df['clicks'], ax=ax)
+ax.set_xlim(0,800)
 
 #Pair headlines based on clickability_test_id and eyecatcher_id
 #Import dataset with pairs
@@ -124,6 +169,26 @@ ridge_predictions_diff = ridge_model_diff.predict(X_test)
 ridge_rmse_diff = mean_squared_error(y_test, ridge_predictions_diff)
 print("Ridge Regression MSE for clicks difference:", ridge_rmse_diff)
 print("Ridge Regression R2 for click difference:", r2_score(y_true=y_test, y_pred=ridge_predictions_diff)) 
+
+#show headlines that scored highly and compare with headlines scored low - using the whole dataset
+ridge_predictions_full = ridge_model_diff.predict(sorted_embedding_diff)
+
+df_sorted_pairs["predictions"] = ridge_model_diff.predict(sorted_embedding_diff)
+#last 20
+df.loc[df_sorted_pairs.sort_values(["predictions"]).loc[:,'Idx_Headline1'][:20], ['headline', 'clicks',"predictions"]]
+#first 20
+df.loc[df_sorted_pairs.sort_values(["predictions"]).loc[:,'Idx_Headline1'][-20:], ['headline', 'clicks',"predictions"]]
+
+
+# Compare headline ranking between true click difference and predicted click difference
+## there has to be a better way!
+predicted_ranking = df_sorted_pairs.sort_values(['predictions'])['Idx_Headline1'].astype(str).values+df_sorted_pairs.sort_values(['predictions'])['Idx_Headline2'].astype(str).values
+true_ranking = df_sorted_pairs.sort_values(['click_difference'])['Idx_Headline1'].astype(str).values+df_sorted_pairs.sort_values(['click_difference'])['Idx_Headline2'].astype(str).values
+
+print("Spearman correlation is",spearmanr(predicted_ranking, true_ranking))
+
+
+
 
 
 # Extra: Prediction based on concatenated full embeddings
