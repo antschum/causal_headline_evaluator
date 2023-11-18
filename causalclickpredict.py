@@ -92,17 +92,35 @@ print("Top 20 true:",df.sort_values(["clicks"]).loc[:,['headline',"clicks"]][-20
 
 # Ridge with clickrate instead of clicks
 # Model
+
 clickrate =torch.tensor(df.clickrate.values)
-X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, clickrate, test_size=0.2)
+
+#X_train, X_test, y_train, y_test = train_test_split(stored_embeddings,clickrate, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(stored_embeddings,torch.log(clickrate+1), test_size=0.2)
 # Ridge Model
+
 ridge_model_clickrate =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1, 10],store_cv_values=True)
 ridge_model_clickrate.fit(X_train, y_train)
 ridge_model_clickrate.score(X_train,y_train) #0.1629
-predictions_clickrate = ridge_model.predict(X_test) #alpha = 10
-rmse_clickrate = mean_squared_error(y_test, predictions, squared=False)
-df["predictions_clickrate"] = ridge_model_clickrate.predict(stored_embeddings)
+predictions_clickrate = ridge_model_clickrate.predict(X_test) #alpha = 10
+rmse_clickrate = mean_squared_error(y_test, predictions_clickrate)
+
+predictions_clickrate_all = ridge_model_clickrate.predict(stored_embeddings)
+
+df["predictions_clickrate_all"] = predictions_clickrate_all
+
+df["predictions_clickrate_als"] = np.exp(df["predictions_clickrate_all"])
+df["predictions_clickrate_als"].min()
+for i in range(predictions_clickrate_all.shape[0]):
+    if predictions_clickrate_all[i] < 0:
+        predictions_clickrate_all[i] = 0
+        
+df["predictions_clickrate_all"] = predictions_clickrate_all
+
 print("Ridge Regression MSE for click difference:", rmse_clickrate)
-print("Ridge Regression R2 for click difference:", r2_score(y_true=y_test, y_pred=predictions))
+print("Ridge Regression R2 for click difference:", r2_score(y_true=y_test, y_pred=predictions_clickrate))
+print(predictions_clickrate_all.min())
+
 #last 20
 print("Last 20 predicted:", df.sort_values(["predictions_clickrate"]).loc[:,['headline',"clickrate","predictions_clickrate"]][:20])
 print("Last 20 true:",df.sort_values(["clickrate"]).loc[:,['headline',"clickrate","predictions_clickrate"]][:20])
