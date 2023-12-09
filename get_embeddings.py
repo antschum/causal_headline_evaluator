@@ -19,14 +19,22 @@ else:
     device = torch.device("cpu")
 
 #Define model - pretrained
-model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+model = SentenceTransformer('all-mpnet-base-v2')
 
 #Load data
-df = pd.read_csv("/Users/tonia/Dropbox/2023WS_Ash_Research_Causal_Predictor/osfstorage-archive/upworthy-archive-datasets/upworthy-archive-confirmatory-packages-03.12.2020.csv", low_memory=False)
+df = pd.read_csv("upworthy-archive-confirmatory-packages-03.12.2020.csv", low_memory=False)
 #Delete some unnecessary columns
 df.columns
-delete_cols = ["created_at","updated_at","share_text","square"]
-df = df.drop(columns=delete_cols)
+# add index as column value
+df.reset_index(inplace=True, names=['embedding_id'])
+## maybe we just order them from the beginning and then check if there are any negative differences? That should almost be enough. 
+
+# 1. Filter out all datapoints that dont contain more than 2 Headlines when filtering for experimental ID and image
+# create mask. 
+df['headline_count'] = df.groupby(['clickability_test_id', 'eyecatcher_id']).headline.transform('count')
+
+# filter for all headlines with at least 2 pairs. 
+df = df.loc[df['headline_count']>=2, ['clickability_test_id', 'excerpt', 'headline', 'lede', 'eyecatcher_id', 'clicks', 'headline_count', 'embedding_id']]
 
 #Extract only headlines
 headlines =df.headline.values
@@ -35,5 +43,5 @@ headlines =df.headline.values
 embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True,
                           )
 
-with open('full_embeddings.pkl', "wb") as fOut:
-     pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
+with open('all-mpnet-base-v2_embeddings.pkl', "wb") as fOut:
+     pickle.dump({'headlines': headlines, 'embeddings': embeddings, 'embedding_id':df.embedding_id}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
