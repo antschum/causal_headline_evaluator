@@ -1,6 +1,4 @@
 import torch 
-
-
 import pickle
 from sentence_transformers import SentenceTransformer
 import pandas as pd
