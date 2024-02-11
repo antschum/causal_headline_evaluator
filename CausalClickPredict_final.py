@@ -259,10 +259,11 @@ unique_topics_causal_ridge = np.delete(unique_topics_causal_ridge,np.where(uniqu
 print("Ratio of topics ridge/causal ridge:",round((unique_topics_ridge.size/unique_topics_causal_ridge.size)*100,2),"%")
 
 # 3.2. Topic Modelling - H2: The histograms of the topics from both models do not differ sufficiently.
-
-ridge_topic["Topic"].value_counts().plot(kind="bar",title="Histogram of topics from Ridge Model",ylim=(0,80))
+plt.figure()
+ridge_topic["Topic"].value_counts().plot(kind="bar",title="Histogram of topics from Ridge Model",ylim=(0,90))
 plt.savefig('hist_topics_ridge.png')
-causal_ridge_topic["Topic"].value_counts().plot(kind="bar",title="Histogram of topics from Causal Ridge Model",ylim=(0,80))
+plt.figure()
+causal_ridge_topic["Topic"].value_counts().plot(kind="bar",title="Histogram of topics from Causal Ridge Model",ylim=(0,90))
 plt.savefig('hist_topics_causal_ridge.png')
 
 
@@ -319,6 +320,7 @@ word_headlines["new_word_diff"] = word_headlines.new_word_clickrate - word_headl
 word_headlines["sentiment"] = word_headlines.headline.apply(lambda h: 'positive' if analyzer.polarity_scores(h)['compound'] >= 0.05 else 'negative' if analyzer.polarity_scores(h)['compound'] <= -0.05 else "neutral")
 
 # Difference in clickrate prediction is more or less normally distributed
+plt.figure()
 plt.hist(word_headlines.new_word_diff, bins=20)
 plt.xlabel('Difference in predicted adjusted clickrate')
 plt.savefig('new_word_diff_hist.png')
