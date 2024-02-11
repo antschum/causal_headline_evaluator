@@ -112,7 +112,7 @@ with open('duplicates_removed_embeddings.pkl', "rb") as fIn:
 
 # 1. Correlational models
 # Splitting data into test and train
-X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, clickrate, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, clickrate, test_size=0.2, random_state=seed)
 # 1.1. Ridge Regression
 ridge_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1, 10],store_cv_values=True)
 ridge_model.fit(X_train, y_train)
@@ -133,7 +133,7 @@ df["predictions_linear"] = linear_model.predict(stored_embeddings)
 
 # 2. Causal models
 # Splitting data into test and train
-X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, adjusted_clickrate, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, adjusted_clickrate, test_size=0.2, random_state=seed)
 
 # 2.1. Causal ridge model
 causal_ridge_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1, 10],store_cv_values=True)
