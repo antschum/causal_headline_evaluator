@@ -95,12 +95,12 @@ adjusted_clickrate = torch.tensor(df.adjusted_clickrate.values)
 #Define model - pretrained
 model = SentenceTransformer('all-mpnet-base-v2')
 #Extract only headlines
-#headlines =df.headline.values
-#embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True)
+headlines =df.headline.values
+embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True)
 
 #To Save embeddings
-#with open('duplicates_removed_embeddings.pkl', "wb") as fOut:
-    # pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
+with open('duplicates_removed_embeddings.pkl', "wb") as fOut:
+    pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
 
 #Load prerun embeddings of all-mpnet-base-v2
 with open('duplicates_removed_embeddings.pkl', "rb") as fIn:
@@ -186,7 +186,7 @@ most_occur = np.array(counter.most_common(50))
 words = most_occur[:20,0]
 words_removal_matrix_stopwords = pd.DataFrame(columns=["Word","Median","Abs Mean","Max diff","Min diff"])
 
-""" i = 0 
+i = 0 
 for word in words:
     
     word_headlines = df[[word in re.findall(r"[\w']+|[.,!?;]", headline_cap) for headline_cap in df.headline_cap]].copy()
@@ -203,7 +203,6 @@ for word in words:
     words_removal_matrix_stopwords.loc[i,["Word","Median","Abs Mean","Max diff","Min diff"]] = word,np.median(removed_word_diff),np.mean(np.abs(removed_word_diff)),np.max(removed_word_diff),np.min(removed_word_diff)
     i += 1
 print(words_removal_matrix_stopwords)
- """
 
 # 3. Topic Modelling
 from bertopic import BERTopic
@@ -233,7 +232,6 @@ topic_model = BERTopic(embedding_model=model, language='English',
                        hdbscan_model=cluster_model)
 
 topic, probs = topic_model.fit_transform(df.headline, stored_embeddings.numpy())
-print(topic_model.get_topic_freq().sort_values("Count",ascending=False))
 # Reducing outliers
 new_topics = topic_model.reduce_outliers(df.headline.tolist(),topic, strategy="c-tf-idf", threshold = 0.05)
 topic_model.update_topics(df.headline.tolist(), topics=new_topics)
@@ -249,8 +247,6 @@ print("Number of headlines per topic:",topic_model.get_topic_freq().sort_values(
 # Extracting top and bottom 300
 ridge_topic = topic_modeling.sort_values(["predictions_ridge"],ascending=False)[:300]
 causal_ridge_topic = topic_modeling.sort_values(["causal_predictions_ridge"],ascending=False)[:300]
-print(ridge_topic["Topic"].value_counts())
-print(causal_ridge_topic["Topic"].value_counts())
 # Extracting unique topics and removing the outliers group from it - Ridge Regression 
 unique_topics_ridge = ridge_topic["Topic"].unique()
 unique_topics_ridge = np.delete(unique_topics_ridge,np.where(unique_topics_ridge==-1))
