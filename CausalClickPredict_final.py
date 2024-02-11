@@ -10,6 +10,8 @@ import pickle
 import random
 import langid
 import re
+import matplotlib.pyplot as plt
+import scipy.stats as stats 
 
 path = "C:/Projects/CausalClicker/causal_headline_evaluator"
 #cpu/gpu
@@ -56,12 +58,12 @@ ids = dupl_headline["clickability_test_id"]
 eid = dupl_headline["eyecatcher_id"]
 mask = df['clickability_test_id'].isin(ids)&df['eyecatcher_id'].isin(eid)
 df = df[~mask]
-print("Final number of observations:",df.shape[0])
+
 
 # check that there are no more duplicate headlines. 
 len(df.headline.drop_duplicates()) == len(df)
 
-# Checking for spanish headlines
+# Checking for spanish headlines (only works for Windows,comment this part if you are using MAC and use line 81 to remove the headlines)
 headlines = df['headline'].astype(str).tolist()
 results = [langid.classify(headline) for headline in headlines]
 log_file = "output_log.txt"
@@ -69,28 +71,23 @@ log_file = "output_log.txt"
 with open(log_file, "w", encoding="utf-8") as log:
     for headline,result in zip(headlines,results):
         language = result
-       
         log.write(f"Sentence: {headline}, Identified Language: {language}\n")
+#These are the Spanish headlines:
 #Como Decir Todo … Sin Pronunciar Ninguna Palabra
 #Ve La Protesta Que Todos Deben Conocer, Pero Que Nadie Puede Oir
 #En Vez De ‘Sí Se Puede,’ Ya Es ‘Sí Se Shhhhhhhhh’?
 #¿Cómo Se Dice ‘Nada’ En Español?
-print(df.shape)
 #removing the sapnish headlines, they are within the same experiment
 df = df[df["clickability_test_id"] != "51436075220cb800020007b3"]
-
-
-#checking if we dropped exactly 4
-print(df.shape)
-# Make tensor
+print("Final number of observations:",df.shape[0])
+# Make tensor for click rate
 clickrate = torch.tensor(df.clickrate.values)
 
-# Calculating adjusted clickrate for causal models
 
-#calculating mean per clickability_test_id and eyecatcher_id
+# Calculating mean per clickability_test_id and eyecatcher_id
 df["means"] = df.groupby(["clickability_test_id","eyecatcher_id"])["clickrate"].transform("mean")
 df["adjusted_clickrate"] = df['clickrate']-df['means']
-
+# Make tensor for adjusted click rate
 adjusted_clickrate = torch.tensor(df.adjusted_clickrate.values)
 
 
@@ -98,18 +95,17 @@ adjusted_clickrate = torch.tensor(df.adjusted_clickrate.values)
 #Define model - pretrained
 model = SentenceTransformer('all-mpnet-base-v2')
 #Extract only headlines
-headlines =df.headline.values
+""" headlines =df.headline.values
 embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True)
-print(embeddings.shape)
 
 #To Save embeddings
 with open('duplicates_removed_embeddings.pkl', "wb") as fOut:
      pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
-
+ """
 #Load prerun embeddings of all-mpnet-base-v2
 with open('duplicates_removed_embeddings.pkl', "rb") as fIn:
     stored_data = pickle.load(fIn)
-    stored_sentences = stored_data['headlines']
+    stored_headlines = stored_data['headlines']
     stored_embeddings = stored_data['embeddings']
 
 # MODELS
@@ -156,43 +152,28 @@ causal_predictions_lm = causal_linear_model.predict(X_test)
 rmse = mean_squared_error(y_test, causal_predictions_lm, squared=False)
 print("Causal Linear Regression R2 is:", r2_score(y_true=y_test, y_pred=causal_predictions_lm))
 df["causal_predictions_linear"] = causal_linear_model.predict(stored_embeddings)
-#Looking at the distribution of the predictions
-print(sns.histplot(df["causal_predictions_linear"]))
+
 
 # MODELS exploration
 
-# 1.1.1 Compare bottom 300 causal model with correlational model - Ridge Regression
+# 1.1. Compare bottom 300 causal model with correlational model - Ridge Regression
 last300_pred = df.sort_values(["predictions_ridge"],ascending=True).loc[:,['headline']][:300]
 last300_pred_causal = df.sort_values(["causal_predictions_ridge"],ascending=True).loc[:,['headline']][:300]
 #Checking for intersection
 print("The overlap for bottom 300 Ridge is ",round(np.intersect1d(last300_pred.values,last300_pred_causal.values).size/300*100,2),"%")
-# 1.1.2 Compare top 20 causal model with correlational model - Ridge Regression
+# 1.2 Compare top 300 causal model with correlational model - Ridge Regression
 first300_pred = df.sort_values(["predictions_ridge"],ascending=False).loc[:,['headline']][:300]
 first300_pred_causal = df.sort_values(["causal_predictions_ridge"],ascending=False).loc[:,['headline']][:300]
-print(first300_pred,first300_pred_causal)
 #Checking for intersection
 print("The overlap for top 300 Ridge is ",round(np.intersect1d(first300_pred.values,first300_pred_causal.values).size/300*100,2),"%")
 
-# 1.2.1 Compare bottom 300 causal model with correlational model - Linear Regression
-last300_pred = df.sort_values(["predictions_linear"],ascending=True).loc[:,['headline']][:300]
-last300_pred_causal = df.sort_values(["causal_predictions_linear"],ascending=True).loc[:,['headline']][:300]
-#Checking for intersection
-print("The overlap for bottom 300 Linear is ",round(np.intersect1d(last300_pred.values,last300_pred_causal.values).size/300*100,2),"%")
-
-# 1.2.2 Compare top 300 causal model with correlational model - Linear Regression
-first300_pred = df.sort_values(["predictions_linear"],ascending=False).loc[:,['headline']][:300]
-first300_pred_causal = df.sort_values(["causal_predictions_linear"],ascending=False).loc[:,['headline']][:300]
-#Checking for intersection
-print("The overlap for top 300 Linear is ",round(np.intersect1d(first300_pred.values,first300_pred_causal.values).size/300*100,2),"%")
-
-# 2. Exploring top 50 most frequent words and perturbing them in order to obtain a new adjusted click rate
+# 2. Exploring top 20 most frequent words and perturbing them in order to obtain a new adjusted click rate
 import nltk
 from nltk.corpus import stopwords
 from collections import Counter 
 #nltk.download('stopwords')
 # Capitalize all words in headline. (we do not have to regenerate embeddings because it does not care) 
 df["headline_cap"] = df.headline.str.title()
-print(df.headline_cap)
 punctuation = { ".", ",", "?", "!", ";", ":"}
 stop_words = stopwords.words('english')
 capitalized = [word.capitalize() for word in stop_words]
@@ -202,14 +183,13 @@ split_it = [word for headline_cap in df.headline_cap for word in re.findall(r"[\
 counter = Counter(split_it) 
 most_occur = np.array(counter.most_common(50))
 # Pull all headlines with the missing word - top 50
-words = most_occur[:,0]
+words = most_occur[:20,0]
 words_removal_matrix_stopwords = pd.DataFrame(columns=["Word","Median","Abs Mean","Max diff","Min diff"])
 
-i = 0 
+""" i = 0 
 for word in words:
     
     word_headlines = df[[word in re.findall(r"[\w']+|[.,!?;]", headline_cap) for headline_cap in df.headline_cap]].copy()
-    print(word_headlines)
     word_headlines['removed'] = [re.sub(r'\b{}\b'.format(word), '',headline_cap) for headline_cap in word_headlines.headline_cap]
     model = SentenceTransformer('all-mpnet-base-v2')
 # Run new embedding space for the headlines with words removed. 
@@ -218,12 +198,12 @@ for word in words:
 # Predict number of clicks with these new embeddigns and add as column to df. 
     word_headlines['removed_word_clickrate'] = causal_ridge_model.predict(removed_word_embeddings)
     removed_word_diff = word_headlines.removed_word_clickrate - word_headlines.causal_predictions_ridge
-#5. Table: word, mean and max (removing the word increases the clickrate) and min (removing the word decreases the clickrate.)
+# Table: word, mean and max (removing the word increases the clickrate) and min (removing the word decreases the clickrate.)
    
     words_removal_matrix_stopwords.loc[i,["Word","Median","Abs Mean","Max diff","Min diff"]] = word,np.median(removed_word_diff),np.mean(np.abs(removed_word_diff)),np.max(removed_word_diff),np.min(removed_word_diff)
     i += 1
 print(words_removal_matrix_stopwords)
-
+ """
 
 # 3. Topic Modelling
 from bertopic import BERTopic
@@ -262,41 +242,85 @@ topic_info = topic_model.get_document_info(df.headline)
 embeddings_topics =topic_model.topic_embeddings_
 topic_modeling = pd.merge(df, topic_info, how='left', left_on='headline', right_on='Document')
 print("Number of headlines per topic:",topic_model.get_topic_freq().sort_values("Count",ascending=False))
-# Visualization of top 8 most freuqent topics
-print(topic_model.visualize_barchart(top_n_topics=8))
+
 
 # Extracting top and bottom 300
 ridge_topic = topic_modeling.sort_values(["predictions_ridge"],ascending=False)[:300]
 causal_ridge_topic = topic_modeling.sort_values(["causal_predictions_ridge"],ascending=False)[:300]
-linear_topic = topic_modeling.sort_values(["predictions_linear"],ascending=False)[:300]
-causal_linear_topic = topic_modeling.sort_values(["causal_predictions_linear"],ascending=False)[:300]
-
+print(ridge_topic["Topic"].value_counts())
+print(causal_ridge_topic["Topic"].value_counts())
 # Extracting unique topics and removing the outliers group from it - Ridge Regression 
 unique_topics_ridge = ridge_topic["Topic"].unique()
 unique_topics_ridge = np.delete(unique_topics_ridge,np.where(unique_topics_ridge==-1))
 unique_topics_causal_ridge = causal_ridge_topic["Topic"].unique()
 unique_topics_causal_ridge = np.delete(unique_topics_causal_ridge,np.where(unique_topics_causal_ridge==-1)) 
 
-# Extracting unique topics and removing the outliers group from it - Linear Regression 
-unique_topics_linear = linear_topic["Topic"].unique()
-unique_topics_linear = np.delete(unique_topics_linear,np.where(unique_topics_linear==-1))
-unique_topics_causal_linear = causal_linear_topic["Topic"].unique()
-unique_topics_causal_linear = np.delete(unique_topics_causal_linear,np.where(unique_topics_causal_linear==-1))
-
 # 3.1 Topic Modelling H1: The number of unique topics of the top 300 headlines in the causal model does not differ sufficiently than the number of unique topics from the correlational model.
-# 3.1.1. H1 - Ridge Model
-print("Ratio of topics ridge/causal ridge:",round((unique_topics_ridge.size/unique_topics_causal_ridge.size)*100,2))
-
-# 3.1.2. H1 - Linear Model
-print("Ratio of topics linear/causal linear:",round((unique_topics_linear.size/unique_topics_causal_linear.size)*100,2))
+print("Ratio of topics ridge/causal ridge:",round((unique_topics_ridge.size/unique_topics_causal_ridge.size)*100,2),"%")
 
 # 3.2. Topic Modelling - H2: The histograms of the topics from both models do not differ sufficiently.
-# 3.2.1 H2 - Ridge Model
 
-print(ridge_topic["Topic"].value_counts().plot(kind="bar"))
-print(causal_ridge_topic["Topic"].value_counts().plot(kind="bar"))
+ridge_topic["Topic"].value_counts().plot(kind="bar",title="Histogram of topics from Ridge Model",ylim=(0,80))
+plt.savefig('hist_topics_ridge.png')
+causal_ridge_topic["Topic"].value_counts().plot(kind="bar",title="Histogram of topics from Causal Ridge Model",ylim=(0,80))
+plt.savefig('hist_topics_causal_ridge.png')
 
-# 3.2.1 H2 - Linear Model
 
-print(linear_topic["Topic"].value_counts().plot(kind="bar"))
-print(causal_linear_topic["Topic"].value_counts().plot(kind="bar"))
+# 4. Sentiment Analysis
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+analyzer = SentimentIntensityAnalyzer()
+
+def apply_sentiment_analysis(headlines, model_name = 'Ridge'):
+    count_positive = 0
+    count_negative = 0
+    count_neutral = 0
+    for headline in headlines:
+        vs = analyzer.polarity_scores(headline)
+        sentiment_dict = analyzer.polarity_scores(headline)
+        if sentiment_dict['compound'] >= 0.05 :
+            count_positive+=1
+     
+        elif sentiment_dict['compound'] <= - 0.05 :
+            count_negative+=1
+     
+        else:
+            count_neutral+=1
+    print(f"Within the {len(headlines)} headlines (with the highest clickrate)")
+    print(f"for the {model_name} model:")
+    print(f" {count_positive} Positive headlines")
+    print(f" {count_neutral} Neutral headlines ")
+    print(f" {count_negative} Negative headlines")
+    print(f"Ratios: {round(count_positive*100/len(headlines))}% positive {round(count_neutral*100/len(headlines))}% neutral {round(count_negative*100/len(headlines))}% negative")
+
+# 4.1. Comparing Sentiment of Headlines with highest clickrates
+# Overall distribution
+apply_sentiment_analysis(topic_modeling.headline, model_name = "no")
+# Top 300 headlines wrt clickrate
+apply_sentiment_analysis(topic_modeling.sort_values(["clickrate"], ascending=False).headline[:300], model_name = "no")
+# Top 300 headlines
+apply_sentiment_analysis(ridge_topic.headline)
+# Top 300 headlines
+apply_sentiment_analysis(causal_ridge_topic.headline, model_name = "Causal Ridge")
+
+
+
+# 4.2. Special: Gender Analysis
+word = "Women"
+new_word = "Men"
+word_headlines = df[[word in re.findall(r"[\w']+|[.,!?;]", headline) for headline in df.headline_cap]].copy()   
+word_headlines['new_word'] = [re.sub(r'\b{}\b'.format(word),new_word,headline) for headline in word_headlines.headline]
+model = SentenceTransformer('all-mpnet-base-v2')
+new_word_embeddings = model.encode(word_headlines.new_word.values, convert_to_tensor=True,batch_size=32,show_progress_bar=True)
+#4. Predict number of clicks with these new embeddigns and add as column to df. 
+word_headlines['new_word_clickrate'] = causal_ridge_model.predict(new_word_embeddings)
+word_headlines["new_word_diff"] = word_headlines.new_word_clickrate - word_headlines.causal_predictions_ridge
+#5. Table: word, mean and max (removing the word increases the clickrate) and min (removing the word decreases the clickrate.)
+word_headlines["sentiment"] = word_headlines.headline.apply(lambda h: 'positive' if analyzer.polarity_scores(h)['compound'] >= 0.05 else 'negative' if analyzer.polarity_scores(h)['compound'] <= -0.05 else "neutral")
+
+# Difference in clickrate prediction is more or less normally distributed
+plt.hist(word_headlines.new_word_diff, bins=20)
+plt.xlabel('Difference in predicted adjusted clickrate')
+plt.savefig('new_word_diff_hist.png')
+# Paired T-Test
+print("P-value of the paired t-test is:",stats.ttest_rel(word_headlines.causal_predictions_ridge, word_headlines.new_word_clickrate))
