@@ -95,13 +95,13 @@ adjusted_clickrate = torch.tensor(df.adjusted_clickrate.values)
 #Define model - pretrained
 model = SentenceTransformer('all-mpnet-base-v2')
 #Extract only headlines
-""" headlines =df.headline.values
-embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True)
+#headlines =df.headline.values
+#embeddings = model.encode(headlines,convert_to_tensor=True,batch_size=32,show_progress_bar=True)
 
 #To Save embeddings
-with open('duplicates_removed_embeddings.pkl', "wb") as fOut:
-     pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
- """
+#with open('duplicates_removed_embeddings.pkl', "wb") as fOut:
+    # pickle.dump({'headlines': headlines, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
+
 #Load prerun embeddings of all-mpnet-base-v2
 with open('duplicates_removed_embeddings.pkl', "rb") as fIn:
     stored_data = pickle.load(fIn)
@@ -112,7 +112,7 @@ with open('duplicates_removed_embeddings.pkl', "rb") as fIn:
 
 # 1. Correlational models
 # Splitting data into test and train
-X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, clickrate, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, clickrate, test_size=0.2,random_state = seed)
 # 1.1. Ridge Regression
 ridge_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1, 10],store_cv_values=True)
 ridge_model.fit(X_train, y_train)
@@ -133,7 +133,7 @@ df["predictions_linear"] = linear_model.predict(stored_embeddings)
 
 # 2. Causal models
 # Splitting data into test and train
-X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, adjusted_clickrate, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(stored_embeddings, adjusted_clickrate, test_size=0.2,random_state = seed)
 
 # 2.1. Causal ridge model
 causal_ridge_model =RidgeCV(alphas=[0.001,0.002,0.005,0.01,0.05,0.07,0.2,0.4,0.6, 1, 10],store_cv_values=True)
@@ -233,13 +233,15 @@ topic_model = BERTopic(embedding_model=model, language='English',
                        hdbscan_model=cluster_model)
 
 topic, probs = topic_model.fit_transform(df.headline, stored_embeddings.numpy())
-
+print(topic_model.get_topic_freq().sort_values("Count",ascending=False))
 # Reducing outliers
 new_topics = topic_model.reduce_outliers(df.headline.tolist(),topic, strategy="c-tf-idf", threshold = 0.05)
 topic_model.update_topics(df.headline.tolist(), topics=new_topics)
+topic_model.save(path, serialization="pytorch", save_ctfidf=True, save_embedding_model=model)
+loaded_model = BERTopic.load(path)
 # Topic modelling dataframe
-topic_info = topic_model.get_document_info(df.headline)
-embeddings_topics =topic_model.topic_embeddings_
+topic_info = loaded_model.get_document_info(df.headline)
+embeddings_topics =loaded_model.topic_embeddings_
 topic_modeling = pd.merge(df, topic_info, how='left', left_on='headline', right_on='Document')
 print("Number of headlines per topic:",topic_model.get_topic_freq().sort_values("Count",ascending=False))
 
